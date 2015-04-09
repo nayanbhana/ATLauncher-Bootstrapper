@@ -19,7 +19,6 @@ package com.atlauncher;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.google.gson.reflect.TypeToken;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 
@@ -47,33 +46,28 @@ public class Bootstrap {
         }
 
         try {
-            json = IOUtils.toString(URI.create("http://download.nodecdn.net/containers/atl/v4/bootstrapper.json"));
+            json = IOUtils.toString(URI.create("http://download.nodecdn.net/containers/atl/v4/app.json"));
         } catch (IOException e) {
             e.printStackTrace();
             System.exit(1);
         }
 
-        List<Dependency> dependencies = GSON.fromJson(json, new TypeToken<List<Dependency>>() {
-        }.getType());
+        Application application = GSON.fromJson(json, Application.class);
 
-        if (dependencies == null || dependencies.size() == 0) {
-            System.exit(1);
-        }
-
-        Dependency current = null;
+        Dependency currentDependency = null;
 
         if (Files.exists(PATH.resolve("nwjs.json"))) {
             try {
-                current = GSON.fromJson(FileUtils.readFileToString(PATH.resolve("nwjs.json").toFile()), Dependency
-                        .class);
+                currentDependency = GSON.fromJson(FileUtils.readFileToString(PATH.resolve("nwjs.json").toFile()),
+                        Dependency.class);
             } catch (IOException e) {
                 e.printStackTrace();
                 System.exit(1);
             }
         }
 
-        for (Dependency dependency : dependencies) {
-            if (dependency.shouldInstall() && !dependency.matches(current)) {
+        for (Dependency dependency : application.getDependencies()) {
+            if (dependency.shouldInstall() && !dependency.matches(currentDependency)) {
                 if (Files.isDirectory(PATH.resolve("nwjs/"))) {
                     try {
                         FileUtils.deleteDirectory(PATH.resolve("nwjs/").toFile());
@@ -88,7 +82,7 @@ public class Bootstrap {
                     Utils.unzip(zipFile, PATH.resolve("nwjs/").toFile());
                     FileUtils.forceDelete(zipFile);
 
-                    current = dependency;
+                    currentDependency = dependency;
 
                     FileUtils.writeStringToFile(PATH.resolve("nwjs.json").toFile(), GSON.toJson(dependency));
 
@@ -100,17 +94,7 @@ public class Bootstrap {
             }
         }
 
-        App app = null;
         App currentApp = null;
-
-        try {
-            json = IOUtils.toString(URI.create("http://download.nodecdn.net/containers/atl/v4/app.json"));
-        } catch (IOException e) {
-            e.printStackTrace();
-            System.exit(1);
-        }
-
-        app = GSON.fromJson(json, App.class);
 
         if (Files.exists(PATH.resolve("app.json"))) {
             try {
@@ -121,33 +105,35 @@ public class Bootstrap {
             }
         }
 
-        if (!app.matches(currentApp)) {
-            if (currentApp != null && Files.isDirectory(PATH.resolve(currentApp.getFilename()))) {
+        if (!application.getApp().matches(currentApp) || (currentApp != null && !Files.exists(PATH.resolve(currentApp
+                .getFilename())))) {
+            if (currentApp != null && Files.exists(PATH.resolve(currentApp.getFilename()))) {
                 try {
-                    FileUtils.deleteDirectory(PATH.resolve(currentApp.getFilename()).toFile());
+                    FileUtils.forceDelete(PATH.resolve(currentApp.getFilename()).toFile());
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
             }
 
             try {
-                FileUtils.copyURLToFile(app.getUrl(), PATH.resolve(app.getFilename()).toFile());
+                FileUtils.copyURLToFile(application.getApp().getUrl(), PATH.resolve(application.getApp().getFilename
+                        ()).toFile());
 
-                currentApp = app;
+                currentApp = application.getApp();
 
-                FileUtils.writeStringToFile(PATH.resolve("app.json").toFile(), GSON.toJson(app));
+                FileUtils.writeStringToFile(PATH.resolve("app.json").toFile(), GSON.toJson(application.getApp()));
             } catch (IOException e) {
                 e.printStackTrace();
                 System.exit(1);
             }
         }
 
-        if (current == null || currentApp == null) {
+        if (currentDependency == null || currentApp == null) {
             System.exit(1);
         }
 
         List<String> arguments = new ArrayList<>();
-        arguments.add(PATH.resolve("nwjs/").toAbsolutePath() + current.getStartup());
+        arguments.add(PATH.resolve("nwjs/").toAbsolutePath() + currentDependency.getStartup());
         arguments.add(currentApp.getFilename());
         ProcessBuilder processBuilder = new ProcessBuilder(arguments);
         processBuilder.directory(PATH.toFile());
